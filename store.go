@@ -2,7 +2,7 @@ package gointf
 
 // Storer is an interface for DB connection
 type Storer interface {
-	GetBucket(bucket string) error
+	CreateBucket(bucket string) error
 	DeleteBucket(bucket string) error
 	Flush() error
 	
