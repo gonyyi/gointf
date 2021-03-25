@@ -12,7 +12,7 @@ var ERR_BUCKET_NOT_EXIST = errors.New("bucket not exist")
 var ERR_KEY_NOT_EXIST = errors.New("key not exist")
 var ERR_KEY_ALREADY_EXISTS = errors.New("key already exists")
 
-func NewStoreWithBolt(filename string) (*boltStore, error) {
+func NewBoltDB(filename string) (*boltStore, error) {
 	b, err := bbolt.Open(filename, 0666, &bbolt.Options{Timeout: 3 * time.Second})
 	if err != nil {
 		return nil, err
