@@ -26,6 +26,9 @@ type Logger struct {
 func (l *Logger) Logger() *alog.Logger {
 	return l.alog
 }
+func (l *Logger) SetLogger(log *alog.Logger) {
+	l.alog = log
+}
 
 func (l *Logger) Trace(tag int64, action string, detail string) {
 	l.alog.Trace(alog.Tag(tag)).Str("action", action).Str("detail", detail).Write("")
