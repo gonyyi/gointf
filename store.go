@@ -22,7 +22,7 @@ type Storer interface {
 	// Put will add values, it will overwrite if exists.
 	Put(bucket, key, val []byte) error
 	// Del will remove the item if exist.
-	Del(bucket, key string) error
+	Del(bucket, key []byte) error
 
 	// Do will get/update/date using func([]byte)([]byte,error).
 	// If returned []byte is nil, it means delete the key.
