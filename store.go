@@ -13,9 +13,9 @@ type Storer interface {
 
 	// NewBucket will create a bucket if not exist. If already exists, it will
 	// return an error.
-	NewBucket(bucket string) error
+	NewBucket(bucket []byte) error
 	// DelBucket will remove bucket. If not found, it will return error.
-	DelBucket(bucket string) error
+	DelBucket(bucket []byte) error
 
 	// Get will get values; if nil returns, there's no item.
 	Get(bucket, key []byte) ([]byte, error)
