@@ -22,15 +22,6 @@ func NewBoltDB(filename string) (*boltStore, error) {
 	return s, nil
 }
 
-//  gointf.Storer interface
-//		CreateBucket(bucket string) error
-//		DeleteBucket(bucket string) error
-//		Flush() error
-//		Put(bucket, key string, data []byte) error
-//		Get(buckt, key string) ([]byte, error)
-//		Delete(bucket, key string) error
-//		Iterate(bucket, prefix string, fn func(key string, value []byte)) error
-
 // Default database for storer will be badger
 type boltStore struct {
 	db *bbolt.DB
@@ -82,14 +73,11 @@ func (s *boltStore) Put(bucket, key, data []byte) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		// If bucket exists, use it to put.
 		b := tx.Bucket(bucket)
+		var err error
 		if b == nil {
-			if err := s.NewBucket(bucket); err != nil {
+			b, err = tx.CreateBucketIfNotExists(bucket)
+			if err != nil {
 				return err
-			}
-			// try again
-			b = tx.Bucket(bucket)
-			if b == nil {
-				return ERR_CANNOT_GET_BUCKET
 			}
 		}
 		return b.Put(key, data)
@@ -100,6 +88,21 @@ func (s *boltStore) Del(bucket, key []byte) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		if b := tx.Bucket(bucket); b != nil {
 			return b.Delete(key)
+		}
+		return ERR_BUCKET_NOT_EXIST
+	})
+}
+
+func (s *boltStore) Iter(bucket, keyPrefix []byte, f func(key []byte, val []byte) error) error {
+	return s.db.View(func(tx *bbolt.Tx) error {
+		if b := tx.Bucket(bucket); b != nil {
+			c := b.Cursor()
+			for k, v := c.Seek(keyPrefix); k != nil && bytes.HasPrefix(k, keyPrefix); k, v = c.Next() {
+				if err := f(k, v); err != nil {
+					return err
+				}
+			}
+			return nil
 		}
 		return ERR_BUCKET_NOT_EXIST
 	})
@@ -126,11 +129,11 @@ func (s *boltStore) Do(bucket, key []byte, f func(val []byte) ([]byte, error)) (
 	return newVal, err
 }
 
-func (s *boltStore) DoIter(bucket, prefix []byte, f func(key, val []byte)([]byte, error)) error {
+func (s *boltStore) DoIter(bucket, keyPrefix []byte, f func(key, val []byte) ([]byte, error)) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
 		if b := tx.Bucket(bucket); b != nil {
 			c := b.Cursor()
-			for k, v := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, _ = c.Next() {
+			for k, v := c.Seek(keyPrefix); k != nil && bytes.HasPrefix(k, keyPrefix); k, v = c.Next() {
 				val, err := f(k, v)
 				if err != nil {
 					return err
@@ -139,6 +142,10 @@ func (s *boltStore) DoIter(bucket, prefix []byte, f func(key, val []byte)([]byte
 					if err = b.Delete(k); err != nil {
 						return err
 					}
+					continue
+				}
+				if bytes.Compare(val, v) != 0 {
+					b.Put(k, val)
 				}
 			}
 			return nil
