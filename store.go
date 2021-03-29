@@ -13,22 +13,22 @@ type Storer interface {
 
 	// NewBucket will create a bucket if not exist. If already exists, it will
 	// return an error.
-	NewBucket(bucket []byte) error
+	NewBucket(bucket string) error
 	// DelBucket will remove bucket. If not found, it will return error.
-	DelBucket(bucket []byte) error
+	DelBucket(bucket string) error
 
 	// Get will get values; if nil returns, there's no item.
-	Get(bucket, key []byte) ([]byte, error)
+	Get(bucket, key string) ([]byte, error)
 	// Put will add values, it will overwrite if exists.
-	Put(bucket, key, val []byte) error
+	Put(bucket, key string, val []byte) error
 	// Del will remove the item if exist.
-	Del(bucket, key []byte) error
+	Del(bucket, key string) error
 
 	// Do will get/update/date using func([]byte)([]byte,error).
 	// If returned []byte is nil, it means delete the key.
-	Do(bucket, key []byte, f func(val []byte)([]byte, error))([]byte, error)
-	
+	Do(bucket, key string, f func(val []byte) ([]byte, error)) ([]byte, error)
+
 	// Do iter will take keyPrefix, and based on that iterate.
 	// When the func returns nil for []byte, it will delete the key.
-	DoIter(bucket, keyPrefix []byte, f func(key, val []byte)([]byte, error)) error
+	DoIter(bucket, keyPrefix string, f func(key string, val []byte) ([]byte, error)) error
 }
