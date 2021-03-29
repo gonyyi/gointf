@@ -1,6 +1,5 @@
 package store_bbolt
 
-
 import (
 	"bytes"
 	"errors"
@@ -11,6 +10,7 @@ import (
 var ERR_BUCKET_NOT_EXIST = errors.New("bucket not exist")
 var ERR_KEY_NOT_EXIST = errors.New("key not exist")
 var ERR_KEY_ALREADY_EXISTS = errors.New("key already exists")
+var ERR_CANNOT_GET_BUCKET = errors.New("cannot get bucket")
 
 func NewBoltDB(filename string) (*boltStore, error) {
 	b, err := bbolt.Open(filename, 0666, &bbolt.Options{Timeout: 3 * time.Second})
@@ -33,86 +33,116 @@ func NewBoltDB(filename string) (*boltStore, error) {
 
 // Default database for storer will be badger
 type boltStore struct {
-	db  *bbolt.DB
+	db *bbolt.DB
 }
 
-func (s *boltStore) CreateBucket(bucket string) error {
+func (s *boltStore) Lock() {
+	return
+}
+
+func (s *boltStore) Unlock() {
+	return
+}
+
+func (s *boltStore) Flush() error {
+	return nil
+}
+
+func (s *boltStore) NewBucket(bucket []byte) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		if _, err := tx.CreateBucketIfNotExists([]byte(bucket)); err != nil {
+		if _, err := tx.CreateBucketIfNotExists(bucket); err != nil {
 			return err
 		}
 		return nil
 	})
 }
 
-func (s *boltStore) DeleteBucket(bucket string) error {
+func (s *boltStore) DelBucket(bucket []byte) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		return tx.DeleteBucket([]byte(bucket))
+		return tx.DeleteBucket(bucket)
 	})
 }
 
-func (s *boltStore) Put(bucket, key string, data []byte) error {
-	return s.db.Update(func(tx *bbolt.Tx) error {
-		if b := tx.Bucket([]byte(bucket)); b != nil {
-			return b.Put([]byte(key), data)
-		}
-		return ERR_BUCKET_NOT_EXIST
-	})
-}
-
-func (s *boltStore) Get(bucket, key string) ([]byte, error) {
+func (s *boltStore) Get(bucket, key []byte) ([]byte, error) {
 	var out []byte
 	err := s.db.View(func(tx *bbolt.Tx) error {
-		if b := tx.Bucket([]byte(bucket)); b != nil {
-			out = b.Get([]byte(key))
-			if out == nil {
-				return ERR_KEY_NOT_EXIST
+		if b := tx.Bucket(bucket); b != nil {
+			out = b.Get(key)
+			if out != nil {
+				return nil
 			}
-			return nil
+			return ERR_KEY_NOT_EXIST
 		}
 		return ERR_BUCKET_NOT_EXIST
 	})
 	return out, err
 }
 
-func (s *boltStore) Delete(bucket, key string) error {
+func (s *boltStore) Put(bucket, key, data []byte) error {
 	return s.db.Update(func(tx *bbolt.Tx) error {
-		if b := tx.Bucket([]byte(bucket)); b != nil {
-			return b.Delete([]byte(key))
+		// If bucket exists, use it to put.
+		b := tx.Bucket(bucket)
+		if b == nil {
+			if err := s.NewBucket(bucket); err != nil {
+				return err
+			}
+			// try again
+			b = tx.Bucket(bucket)
+			if b == nil {
+				return ERR_CANNOT_GET_BUCKET
+			}
+		}
+		return b.Put(key, data)
+	})
+}
+
+func (s *boltStore) Del(bucket, key []byte) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		if b := tx.Bucket(bucket); b != nil {
+			return b.Delete(key)
 		}
 		return ERR_BUCKET_NOT_EXIST
 	})
 }
 
-func (s *boltStore) getBuckets() ([]string, error) {
-	var out []string
-	err := s.db.View(func(tx *bbolt.Tx) error {
-		tx.ForEach(func(name []byte, b *bbolt.Bucket)error {
-			if b != nil {
-				out = append(out, string(name))
+func (s *boltStore) Do(bucket, key []byte, f func(val []byte) ([]byte, error)) ([]byte, error) {
+	var newVal []byte
+	var err error
+	err = s.db.Update(func(tx *bbolt.Tx) error {
+		if b := tx.Bucket(bucket); b != nil {
+			val := b.Get(key)
+			newVal, err = f(val)
+			if err != nil {
+				return err
 			}
-			return nil
-		})
-		return nil
+			// delete if newVal is nil
+			if val != nil && newVal == nil {
+				return b.Delete(key)
+			}
+			return b.Put(key, newVal)
+		}
+		return ERR_BUCKET_NOT_EXIST
 	})
-	return out, err
+	return newVal, err
 }
 
-func (s *boltStore) Iterate(bucket, prefix string, fn func(key string, value []byte)) error {
-	return s.db.View(func(tx *bbolt.Tx) error {
-		// check if bucket exists,
-		prefix := []byte(prefix)
-		if b := tx.Bucket([]byte(bucket)); b != nil {
+func (s *boltStore) DoIter(bucket, prefix []byte, f func(key, val []byte)([]byte, error)) error {
+	return s.db.Update(func(tx *bbolt.Tx) error {
+		if b := tx.Bucket(bucket); b != nil {
 			c := b.Cursor()
 			for k, v := c.Seek(prefix); k != nil && bytes.HasPrefix(k, prefix); k, _ = c.Next() {
-				fn(string(k), v)
+				val, err := f(k, v)
+				if err != nil {
+					return err
+				}
+				if val == nil {
+					if err = b.Delete(k); err != nil {
+						return err
+					}
+				}
 			}
 			return nil
 		}
 		return ERR_BUCKET_NOT_EXIST
 	})
-}
-
-func (s *boltStore) Flush() error {
-	return nil
 }
